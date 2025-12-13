@@ -1,0 +1,1 @@
+# manabie_auto_allocation_test
