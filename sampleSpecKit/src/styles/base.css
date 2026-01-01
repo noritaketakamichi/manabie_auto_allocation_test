@@ -1,0 +1,21 @@
+:root {
+  --primary-color: #646cff;
+  --bg-dark: #1a1a1a;
+  --text-light: #ffffff;
+  --spacing-unit: 8px;
+  --border-radius: 8px;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg-dark);
+  color: var(--text-light);
+  font-family: 'Inter', sans-serif;
+}
+
+.album-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: calc(var(--spacing-unit) * 2);
+  padding: calc(var(--spacing-unit) * 2);
+}
