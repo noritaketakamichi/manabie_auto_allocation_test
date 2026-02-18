@@ -162,6 +162,22 @@ try:
 
     print(f"  -> 生成された変数数: {len(x)}")
 
+    # --- インデックス辞書の構築（制約生成の高速化） ---
+    x_by_student_subject = collections.defaultdict(list)
+    x_by_student_subject_teacher = collections.defaultdict(list)
+    x_by_student_slot = collections.defaultdict(list)
+    x_by_teacher_slot = collections.defaultdict(list)
+    x_by_slot = collections.defaultdict(list)
+
+    for (sid, cid, tid, slid), var in x.items():
+        x_by_student_subject[(sid, cid)].append(var)
+        x_by_student_subject_teacher[(sid, cid, tid)].append(var)
+        x_by_student_slot[(sid, slid)].append(var)
+        x_by_teacher_slot[(tid, slid)].append(var)
+        x_by_slot[slid].append(var)
+
+    print(f"  -> インデックス構築完了")
+
     # ==============================================
     # 制約条件
     # ==============================================
@@ -170,33 +186,29 @@ try:
     # --- 基本制約: 残りコマ数上限（合計） ---
     for req in requests:
         sid, cid, sessions = req['sid'], req['cid'], req['sessions']
-        relevant_vars = [v for (s, c, t, sl), v in x.items() if s == sid and c == cid]
+        relevant_vars = x_by_student_subject.get((sid, cid), [])
         if relevant_vars:
             solver.Add(solver.Sum(relevant_vars) <= sessions)
             constraint_count += 1
 
     # --- 基本制約: 講師ごとの残りコマ数上限 ---
     for (sid, cid, tid), limit in limit_constraints.items():
-        relevant_vars = [v for (s, c, t, sl), v in x.items() if s == sid and c == cid and t == tid]
+        relevant_vars = x_by_student_subject_teacher.get((sid, cid, tid), [])
         if relevant_vars:
             solver.Add(solver.Sum(relevant_vars) <= limit)
             constraint_count += 1
 
     # --- 基本制約: 同時受講禁止（生徒は同一スロットに1つまで） ---
-    for sid in s_map.keys():
-        for slid in all_slots:
-            vars_s = [v for (s, c, t, sl), v in x.items() if s == sid and sl == slid]
-            if vars_s:
-                solver.Add(solver.Sum(vars_s) <= 1)
-                constraint_count += 1
+    for (sid, slid), vars_s in x_by_student_slot.items():
+        if vars_s:
+            solver.Add(solver.Sum(vars_s) <= 1)
+            constraint_count += 1
 
     # --- 基本制約: 同時指導禁止（講師は同一スロットに1つまで） ---
-    for tid in t_map.keys():
-        for slid in all_slots:
-            vars_t = [v for (s, c, t, sl), v in x.items() if t == tid and sl == slid]
-            if vars_t:
-                solver.Add(solver.Sum(vars_t) <= 1)
-                constraint_count += 1
+    for (tid, slid), vars_t in x_by_teacher_slot.items():
+        if vars_t:
+            solver.Add(solver.Sum(vars_t) <= 1)
+            constraint_count += 1
 
     print(f"  基本制約: {constraint_count} 件")
 
@@ -228,7 +240,7 @@ try:
                 date_slot_ids = set(sl for _, sl in tr_slots)
                 existing_count = sum(1 for sl in date_slot_ids if sl in teacher_busy_slots[tid])
                 remaining = max(0, val - existing_count)
-                vars_td = [v for (s, c, t, sl), v in x.items() if t == tid and sl in date_slot_ids]
+                vars_td = [v for slid in date_slot_ids for v in x_by_teacher_slot.get((tid, slid), [])]
                 if vars_td:
                     solver.Add(solver.Sum(vars_td) <= remaining)
                     extra_count += 1
@@ -253,7 +265,7 @@ try:
                     window_slot_ids = [sl for _, sl in window]
                     existing_in_window = sum(1 for sl in window_slot_ids if sl in student_busy_slots[sid])
                     remaining = max(0, val - existing_in_window)
-                    vars_w = [v for (s, c, t, sl), v in x.items() if s == sid and sl in set(window_slot_ids)]
+                    vars_w = [v for slid in window_slot_ids for v in x_by_student_slot.get((sid, slid), [])]
                     if vars_w:
                         solver.Add(solver.Sum(vars_w) <= remaining)
                         extra_count += 1
@@ -273,7 +285,7 @@ try:
                 date_slot_ids = set(sl for _, sl in tr_slots)
                 existing_count = sum(1 for sl in date_slot_ids if sl in student_busy_slots[sid])
                 remaining = max(0, val - existing_count)
-                vars_sd = [v for (s, c, t, sl), v in x.items() if s == sid and sl in date_slot_ids]
+                vars_sd = [v for slid in date_slot_ids for v in x_by_student_slot.get((sid, slid), [])]
                 if vars_sd:
                     solver.Add(solver.Sum(vars_sd) <= remaining)
                     extra_count += 1
@@ -287,7 +299,7 @@ try:
         for slid in all_slots:
             existing_count = existing_slot_counts[slid]
             remaining = max(0, val - existing_count)
-            vars_slot = [v for (s, c, t, sl), v in x.items() if sl == slid]
+            vars_slot = x_by_slot.get(slid, [])
             if vars_slot:
                 solver.Add(solver.Sum(vars_slot) <= remaining)
                 extra_count += 1
@@ -317,9 +329,9 @@ try:
                         intermediate_slots = [tr_slots[k][1] for k in range(i + 1, j)]
                         needed = gap - val
 
-                        vars_a = [v for (s, c, t, sl), v in x.items() if t == tid and sl == slot_a]
-                        vars_b = [v for (s, c, t, sl), v in x.items() if t == tid and sl == slot_b]
-                        vars_inter = [v for (s, c, t, sl), v in x.items() if t == tid and sl in set(intermediate_slots)]
+                        vars_a = x_by_teacher_slot.get((tid, slot_a), [])
+                        vars_b = x_by_teacher_slot.get((tid, slot_b), [])
+                        vars_inter = [v for slid in intermediate_slots for v in x_by_teacher_slot.get((tid, slid), [])]
 
                         has_a = 1 if slot_a in teacher_busy_slots[tid] else 0
                         has_b = 1 if slot_b in teacher_busy_slots[tid] else 0
@@ -501,9 +513,9 @@ try:
             print(f"\n📌 リクエスト別 配置可能性:")
             for req in requests:
                 sid, cid, sessions = req['sid'], req['cid'], req['sessions']
-                relevant_vars = [k for k in x.keys() if k[0] == sid and k[1] == cid]
-                unique_slots = set(k[3] for k in relevant_vars)
-                unique_teachers = set(k[2] for k in relevant_vars)
+                relevant_keys = [(s, c, t, sl) for (s, c, t, sl) in x.keys() if s == sid and c == cid]
+                unique_slots = set(k[3] for k in relevant_keys)
+                unique_teachers = set(k[2] for k in relevant_keys)
                 status_icon = "✅" if len(unique_slots) >= sessions else "⚠️"
                 print(f"  {status_icon} {s_map.get(sid)} x {c_map.get(cid)}: "
                       f"希望{sessions}コマ / 候補スロット{len(unique_slots)}個 / 候補講師{len(unique_teachers)}名")
@@ -511,11 +523,11 @@ try:
             # リソース利用状況
             print(f"\n📌 リソース利用状況:")
             for tid in t_map.keys():
-                t_vars = [k for k in x.keys() if k[2] == tid]
-                t_slots = set(k[3] for k in t_vars)
+                t_slots_set = set(slid for (t, slid) in x_by_teacher_slot.keys() if t == tid)
+                t_var_count = sum(len(v) for (t, slid), v in x_by_teacher_slot.items() if t == tid)
                 existing = len(teacher_busy_slots.get(tid, set()))
-                print(f"  講師 {t_map.get(tid)}: 候補変数{len(t_vars)}個 / "
-                      f"候補スロット{len(t_slots)}個 / 既存{existing}コマ")
+                print(f"  講師 {t_map.get(tid)}: 候補変数{t_var_count}個 / "
+                      f"候補スロット{len(t_slots_set)}個 / 既存{existing}コマ")
 
             # 制約影響分析
             print(f"\n📌 有効な追加制約:")
