@@ -10,7 +10,7 @@ function onOpen() {
     .addItem('🎓 3. 講師用：入力シートを作成', 'createTeacherUI')
     .addItem('🎓 4. 講師用：データを保存', 'saveTeacherData')
     .addSeparator()
-    .addItem('📊 5. 結果をスケジュール表で表示', 'visualizeSchedule')
+    .addItem('📊 5. 結果をスケジュール表で表示', 'visualizeAllSchedules')
     .addSeparator()
     .addItem('🗑️ 6. 配置結果をリセット', 'resetAllocation')
     .addToUi();
@@ -238,26 +238,43 @@ function saveMatrixData(uiSheetName, outputSheetName, idColName) {
 //  可視化機能（列幅維持 ＆ 時間帯名称表示）
 // ==================================================
 
-function visualizeSchedule() {
+function visualizeStudentSchedule() { visualizeScheduleFor('student'); }
+function visualizeTeacherSchedule() { visualizeScheduleFor('teacher'); }
+function visualizeAllSchedules() {
+  visualizeScheduleFor('student');
+  visualizeScheduleFor('teacher');
+}
+
+/**
+ * スケジュール可視化の共通関数
+ * @param {'student'|'teacher'} mode - 生徒 or 講師
+ */
+function visualizeScheduleFor(mode) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheetAllocated = ss.getSheetByName('O01_output_allocated_lessons');
   const sheetSlots = ss.getSheetByName('I05_lesson_slot');
-  const sheetStudents = ss.getSheetByName('I03_student_list');
   const sheetTimeRange = ss.getSheetByName('I02_time_range');
-  
-  if (!sheetAllocated || !sheetSlots || !sheetStudents) {
-    Browser.msgBox("エラー: 必要なシートが見つかりません。");
+
+  const isStudent = (mode === 'student');
+  const listSheetName = isStudent ? 'I03_student_list' : 'I04_teacher_list';
+  const vizSheetName = isStudent ? 'Visualized_Student_Schedule' : 'Visualized_Teacher_Schedule';
+  const idColName = isStudent ? 'student_id' : 'teacher_id';
+  const labelName = isStudent ? '生徒名' : '講師名';
+
+  const sheetList = ss.getSheetByName(listSheetName);
+
+  if (!sheetAllocated || !sheetSlots || !sheetList) {
+    Browser.msgBox(`エラー: 必要なシート（O01, I05, ${listSheetName}）が見つかりません。`);
     return;
   }
 
-  // ★変更点：時間帯名称マップ作成
+  // 時間帯名称マップ作成
   let trMap = new Map();
   if (sheetTimeRange && sheetTimeRange.getLastRow() > 1) {
     const trData = sheetTimeRange.getRange(2, 1, sheetTimeRange.getLastRow() - 1, 2).getValues();
     trData.forEach(r => trMap.set(r[0], r[1]));
   }
 
-  const vizSheetName = 'Visualized_Schedule';
   let sheetViz = ss.getSheetByName(vizSheetName);
   let savedWidths = null;
 
@@ -270,7 +287,7 @@ function visualizeSchedule() {
 
   // --- データ準備 ---
   const slotData = sheetSlots.getRange(2, 1, sheetSlots.getLastRow() - 1, 3).getValues();
-  const studentData = sheetStudents.getRange(2, 1, sheetStudents.getLastRow() - 1, 2).getValues();
+  const listData = sheetList.getRange(2, 1, sheetList.getLastRow() - 1, 2).getValues();
   const allocValues = sheetAllocated.getDataRange().getValues();
   const allocHeader = allocValues[0];
   const allocData = allocValues.slice(1);
@@ -278,6 +295,8 @@ function visualizeSchedule() {
   const colIdx = {
     slot: allocHeader.indexOf('slot_id'),
     student: allocHeader.indexOf('student_id'),
+    teacher: allocHeader.indexOf('teacher_id'),
+    s_name: allocHeader.indexOf('生徒名'),
     t_name: allocHeader.indexOf('講師名'),
     c_name: allocHeader.indexOf('科目名')
   };
@@ -285,42 +304,49 @@ function visualizeSchedule() {
   if (colIdx.slot === -1) return;
 
   const slotMap = {}; slotData.forEach((row, i) => slotMap[row[0]] = i);
-  const studentMap = {}; studentData.forEach((row, i) => studentMap[row[0]] = i);
+  const personMap = {}; listData.forEach((row, i) => personMap[row[0]] = i);
 
   // マトリクス作成
-  const numRows = studentData.length + 2;
+  const numRows = listData.length + 2;
   const numCols = slotData.length + 2;
   const outputMatrix = Array.from({length: numRows}, () => Array(numCols).fill(''));
 
   // ヘッダー
-  outputMatrix[0][0] = 'student_id'; outputMatrix[1][0] = 'ID';
-  outputMatrix[0][1] = 'student_name'; outputMatrix[1][1] = '生徒名';
+  outputMatrix[0][0] = idColName; outputMatrix[1][0] = 'ID';
+  outputMatrix[0][1] = 'name'; outputMatrix[1][1] = labelName;
 
   slotData.forEach((row, i) => {
     const col = i + 2;
     const dateStr = Utilities.formatDate(new Date(row[1]), Session.getScriptTimeZone(), "MM/dd");
     const timeId = row[2];
-    
-    // ★変更点：時間帯名称を表示
     const timeDesc = trMap.get(timeId) || `S${timeId}`;
     outputMatrix[0][col] = row[0];
     outputMatrix[1][col] = `${dateStr}\n${timeDesc}`;
   });
 
-  studentData.forEach((row, i) => {
+  listData.forEach((row, i) => {
     const r = i + 2;
     outputMatrix[r][0] = row[0];
     outputMatrix[r][1] = row[1];
   });
 
   // データ埋め
+  // 生徒用: セルに「【科目名】\n講師名」を表示
+  // 講師用: セルに「【科目名】\n生徒名」を表示
+  const personIdCol = isStudent ? colIdx.student : colIdx.teacher;
   allocData.forEach(row => {
-    const sid = row[colIdx.student];
-    const slid = row[colIdx.slot];
-    const rIndex = studentMap[sid];
-    const cIndex = slotMap[slid];
+    const personId = row[personIdCol];
+    const slotId = row[colIdx.slot];
+    const rIndex = personMap[personId];
+    const cIndex = slotMap[slotId];
     if (rIndex !== undefined && cIndex !== undefined) {
-      outputMatrix[rIndex + 2][cIndex + 2] = `【${row[colIdx.c_name]}】\n${row[colIdx.t_name]}`;
+      const courseName = row[colIdx.c_name];
+      const counterpartName = isStudent ? row[colIdx.t_name] : row[colIdx.s_name];
+      const cellText = `【${courseName}】\n${counterpartName}`;
+
+      // 同じセルに複数の授業がある場合（講師が同時に複数生徒を持つケースなど）
+      const existing = outputMatrix[rIndex + 2][cIndex + 2];
+      outputMatrix[rIndex + 2][cIndex + 2] = existing ? `${existing}\n${cellText}` : cellText;
     }
   });
 
@@ -332,7 +358,7 @@ function visualizeSchedule() {
   sheetViz.setFrozenColumns(2);
   sheetViz.hideRows(1);
   sheetViz.hideColumns(1);
-  
+
   const dataRange = sheetViz.getRange(3, 3, numRows - 2, numCols - 2);
   dataRange.setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);
   dataRange.setVerticalAlignment('middle');
@@ -345,7 +371,7 @@ function visualizeSchedule() {
     sheetViz.autoResizeColumns(2, numCols - 1);
   }
 
-  Browser.msgBox("可視化完了: スケジュール表を更新しました。");
+  Browser.msgBox(`可視化完了: ${labelName}スケジュール表を更新しました。`);
 }
 
 // ==================================================
@@ -363,7 +389,9 @@ function resetAllocation() {
     '以下のシートのデータをすべて削除します。\n\n' +
     '・O01_output_allocated_lessons（配置結果）\n' +
     '・O02_output_unallocated_lessons（未配置リスト）\n' +
-    '・Visualized_Schedule（スケジュール表）\n\n' +
+    '・O03_output_fulfillment（充足率）\n' +
+    '・Visualized_Student_Schedule（生徒スケジュール表）\n' +
+    '・Visualized_Teacher_Schedule（講師スケジュール表）\n\n' +
     'よろしいですか？',
     Browser.Buttons.YES_NO
   );
@@ -372,7 +400,8 @@ function resetAllocation() {
 
   const sheetsToReset = [
     { name: 'O01_output_allocated_lessons', headers: ['slot_id', 'student_id', 'teacher_id', 'subject_id', '日時', '生徒名', '講師名', '科目名'] },
-    { name: 'O02_output_unallocated_lessons', headers: ['student_id', 'subject_id', '不足数', '生徒名', '科目名', '理由'] }
+    { name: 'O02_output_unallocated_lessons', headers: ['student_id', 'subject_id', '不足数', '生徒名', '科目名', '理由'] },
+    { name: 'O03_output_fulfillment', headers: ['student_id', '生徒名', 'subject_id', '科目名', '希望コマ数', '配置コマ数', '充足率(%)'] }
   ];
 
   let resetCount = 0;
@@ -386,12 +415,14 @@ function resetAllocation() {
     }
   });
 
-  // Visualized_Schedule はデータのみクリア
-  const sheetViz = ss.getSheetByName('Visualized_Schedule');
-  if (sheetViz) {
-    sheetViz.clear();
-    resetCount++;
-  }
+  // スケジュール表はデータのみクリア
+  ['Visualized_Student_Schedule', 'Visualized_Teacher_Schedule'].forEach(name => {
+    const sheet = ss.getSheetByName(name);
+    if (sheet) {
+      sheet.clear();
+      resetCount++;
+    }
+  });
 
   Browser.msgBox(`リセット完了: ${resetCount} シートをクリアしました。\n再度Colabから最適化を実行してください。`);
 }

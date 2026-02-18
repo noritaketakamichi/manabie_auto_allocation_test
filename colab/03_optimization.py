@@ -416,6 +416,25 @@ try:
         else:
             df_un = pd.DataFrame(columns=un_columns)
 
+        # 充足率レポート作成
+        fulfillment_rows = []
+        for _, row in df_reqs.iterrows():
+            sid = row['student_id']
+            cid = row['subject_id']
+            requested = row['sessions']
+            allocated = total_counts[(sid, cid)]
+            rate = allocated / requested if requested > 0 else 0.0
+            fulfillment_rows.append([
+                sid, s_map.get(sid), cid, c_map.get(cid),
+                requested, allocated, round(rate * 100, 1)
+            ])
+
+        df_fulfill = pd.DataFrame(fulfillment_rows, columns=[
+            'student_id', '生徒名', 'subject_id', '科目名',
+            '希望コマ数', '配置コマ数', '充足率(%)'
+        ])
+        df_fulfill = df_fulfill.sort_values(['student_id', 'subject_id'])
+
         print(f"\n✅ 最終結果: 全 {len(df_final)} コマ (うち新規 {len(df_new)} コマ)")
         display(df_final[['日時', '生徒名', '講師名', '科目名']].tail())
 
@@ -424,6 +443,13 @@ try:
             display(df_un)
         else:
             print("✅ 未配置なし: すべてのリクエストが配置されました。")
+
+        # 充足率サマリー表示
+        total_requested = df_fulfill['希望コマ数'].sum()
+        total_allocated = df_fulfill['配置コマ数'].sum()
+        overall_rate = round(total_allocated / total_requested * 100, 1) if total_requested > 0 else 0.0
+        print(f"\n📊 充足率: {total_allocated}/{total_requested} コマ ({overall_rate}%)")
+        display(df_fulfill)
 
         # シートへの書き込み
         import traceback
@@ -450,6 +476,7 @@ try:
 
         save_sheet('O01_output_allocated_lessons', df_final)
         save_sheet('O02_output_unallocated_lessons', df_un)
+        save_sheet('O03_output_fulfillment', df_fulfill)
 
     else:
         status_names = {
