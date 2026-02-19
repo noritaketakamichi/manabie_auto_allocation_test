@@ -90,9 +90,9 @@ try:
     limit_constraints = {}
 
     for _, row in df_reqs.iterrows():
-        sid = row['student_id']
-        cid = row['subject_id']
-        total_sessions = row['sessions']
+        sid = int(row['student_id']) if pd.notna(row['student_id']) else 0
+        cid = int(row['subject_id']) if pd.notna(row['subject_id']) else 0
+        total_sessions = int(row['sessions']) if pd.notna(row['sessions']) else 0
 
         already_assigned = existing_counts[(sid, cid)]
         remaining_sessions = total_sessions - already_assigned
@@ -105,11 +105,11 @@ try:
             t_col = f'desired_teacher_{i}'
             limit_col = f'max_slot_{i}'
 
-            if t_col in row and pd.notna(row[t_col]) and row[t_col] != '':
-                tid = row[t_col]
+            if t_col in row and pd.notna(row[t_col]) and row[t_col] != '' and int(row[t_col]) != 0:
+                tid = int(row[t_col])
                 desired_teachers.append(tid)
 
-                if limit_col in row and pd.notna(row[limit_col]) and row[limit_col] != '':
+                if limit_col in row and pd.notna(row[limit_col]) and row[limit_col] != '' and int(row[limit_col]) != 0:
                     raw_limit = int(row[limit_col])
                     already_by_teacher = existing_teacher_counts[(sid, cid, tid)]
                     remaining_limit = max(0, raw_limit - already_by_teacher)

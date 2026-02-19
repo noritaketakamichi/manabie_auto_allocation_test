@@ -42,6 +42,39 @@ try:
     df_t_avail = dfs['teacher_avail']
     df_constraints = dfs['constraints']
 
+    # ID列の型を統一（gspreadはint/str混在になることがある）
+    def to_int_col(df, col, fill=0):
+        """数値列をintに変換。変換不可はfill値で埋める。"""
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(fill).astype(int)
+
+    for df, cols in [
+        (df_students, ['id']),
+        (df_teachers, ['id']),
+        (df_subjects, ['id']),
+        (df_time_ranges, ['id']),
+        (df_slots, ['id', 'time_range_id']),
+        (df_teachable, ['teacher_id', 'subject_id']),
+        (df_s_avail, ['student_id', 'slot_id']),
+        (df_t_avail, ['teacher_id', 'slot_id']),
+    ]:
+        if not df.empty:
+            for col in cols:
+                if col in df.columns:
+                    to_int_col(df, col)
+
+    if not df_reqs.empty:
+        for col in ['student_id', 'subject_id', 'sessions']:
+            if col in df_reqs.columns:
+                to_int_col(df_reqs, col)
+        # desired_teacher_*, max_slot_* は空欄=NaNのまま残す（0にすると存在しない講師ID扱いになる）
+        for i in range(1, 4):
+            for prefix in ['desired_teacher_', 'max_slot_']:
+                col = f'{prefix}{i}'
+                if col in df_reqs.columns:
+                    df_reqs[col] = pd.to_numeric(df_reqs[col], errors='coerce')
+        # gspreadが返す空行を除去
+        df_reqs = df_reqs[df_reqs['student_id'] != 0].reset_index(drop=True)
+
     # マッピング作成
     s_map = dict(zip(df_students['id'], df_students['student_name']))
     t_map = dict(zip(df_teachers['id'], df_teachers['teacher_name']))
