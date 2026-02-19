@@ -21,13 +21,19 @@
 
 ```
 autoScheduling/
+├── scripts/
+│   └── parse_pdfs.py          # PDF→CSV変換スクリプト（校舎データ作成）
 ├── colab/
 │   ├── 01_setup.py            # Google認証・ライブラリ読み込み
 │   ├── 02_dataInput.py        # データ読み込み・診断レポート
 │   └── 03_optimization.py     # 最適化計算・結果出力
 ├── GAS/
 │   └── gas.js                 # スプレッドシートのメニュー・入力UI・可視化
-└── sample_sheet/              # サンプルデータ（CSV）
+├── sample_sheet/              # サンプルデータ（CSV）
+└── samplePdfs/                # 校舎別PDFデータ（gitignore対象）
+    └── tamapura/
+        ├── input/             # 元PDF（枠取表・講師カード）
+        └── output/            # 生成済みCSV
 ```
 
 ---
@@ -384,6 +390,31 @@ Colabのセルを順番に実行：
 - `O01_output_allocated_lessons` に既存の配置データがある状態で最適化を実行すると、**既存の配置は固定**したまま、残りの未配置分のみを計算します
 - 「一部を手動で確定させてから、残りを自動配置」といった運用が可能です
 - リセットしたい場合は GAS メニューの「6. 配置結果をリセット」を使ってください
+
+---
+
+## PDF→CSV変換（校舎データ作成）
+
+実際の校舎で使われている枠取表・講師カードのPDFから、入力CSVを自動生成できます。
+
+### 前提条件
+
+- Python 3.11 + pdfplumber
+
+### 実行方法
+
+```bash
+/usr/local/bin/python3.11 scripts/parse_pdfs.py samplePdfs/tamapura
+```
+
+- 入力: `samplePdfs/tamapura/input/` 内の `student.pdf`, `teacher.pdf`
+- 出力: `samplePdfs/tamapura/output/` に I01〜I52, constraint.csv を生成
+
+### 新しい校舎を追加する場合
+
+1. `samplePdfs/<校舎名>/input/` に PDF を配置
+2. 必要に応じて `scripts/parse_pdfs.py` の `PERIOD_START`, `PERIOD_END`, `TIME_SLOTS` 等を修正
+3. `python3.11 scripts/parse_pdfs.py samplePdfs/<校舎名>` を実行
 
 ---
 
