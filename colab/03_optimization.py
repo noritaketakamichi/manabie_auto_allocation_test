@@ -65,6 +65,7 @@ try:
     existing_counts = collections.defaultdict(int)
     existing_teacher_counts = collections.defaultdict(int)
     existing_slot_counts = collections.defaultdict(int)
+    existing_student_subject_date_counts = collections.defaultdict(int)
 
     if use_existing:
         for _, row in df_existing.iterrows():
@@ -79,6 +80,7 @@ try:
             existing_counts[(sid, cid)] += 1
             existing_teacher_counts[(sid, cid, tid)] += 1
             existing_slot_counts[slid] += 1
+            existing_student_subject_date_counts[(sid, cid, slot_to_date[slid])] += 1
 
     # --------------------------------------------------
     # 3. リクエスト情報の構築 (残りコマ数の計算)
@@ -88,6 +90,7 @@ try:
 
     requests = []
     limit_constraints = {}
+    student_subject_daily_limit = {}
 
     for _, row in df_reqs.iterrows():
         sid = int(row['student_id']) if pd.notna(row['student_id']) else 0
@@ -99,6 +102,13 @@ try:
 
         if remaining_sessions <= 0:
             continue
+
+        # 科目ごとの1日受講コマ数上限
+        mdss_col = 'max_daily_subject_slot'
+        if mdss_col in row and pd.notna(row[mdss_col]) and row[mdss_col] != '':
+            mdss_val = int(row[mdss_col])
+            if mdss_val > 0:
+                student_subject_daily_limit[(sid, cid)] = mdss_val
 
         desired_teachers = []
         for i in range(1, 4):
@@ -168,6 +178,7 @@ try:
     x_by_student_slot = collections.defaultdict(list)
     x_by_teacher_slot = collections.defaultdict(list)
     x_by_slot = collections.defaultdict(list)
+    x_by_student_subject_date = collections.defaultdict(list)
 
     for (sid, cid, tid, slid), var in x.items():
         x_by_student_subject[(sid, cid)].append(var)
@@ -175,6 +186,7 @@ try:
         x_by_student_slot[(sid, slid)].append(var)
         x_by_teacher_slot[(tid, slid)].append(var)
         x_by_slot[slid].append(var)
+        x_by_student_subject_date[(sid, cid, slot_to_date[slid])].append(var)
 
     print(f"  -> インデックス構築完了")
 
@@ -366,6 +378,21 @@ try:
         print(f"  制約5 ON: 講師空きコマ上限（個人別） (+{extra_count - before}件)")
         for w in c5_warnings:
             print(f"    ⚠️ {w}")
+
+    # --- 制約6: 生徒の科目ごとの1日受講コマ数上限（I07のmax_daily_subject_slot） ---
+    c6 = constraint_flags.get('max_student_subject_daily_slot', {})
+    if c6.get('activated'):
+        before = extra_count
+        for (sid, cid, date), vars_list in x_by_student_subject_date.items():
+            limit = student_subject_daily_limit.get((sid, cid))
+            if limit is None:
+                continue
+            existing_count = existing_student_subject_date_counts[(sid, cid, date)]
+            remaining = max(0, limit - existing_count)
+            if vars_list:
+                solver.Add(solver.Sum(vars_list) <= remaining)
+                extra_count += 1
+        print(f"  制約6 ON: 生徒科目別1日上限（個人別） (+{extra_count - before}件)")
 
     print(f"  制約合計: {constraint_count + extra_count} 件")
 

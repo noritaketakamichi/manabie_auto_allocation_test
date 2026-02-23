@@ -88,33 +88,12 @@ try:
     # --- 1. 生徒の授業希望チェック ---
     print(f"\n📌 【授業リクエスト】(全 {len(df_reqs)} 件)")
     if not df_reqs.empty:
-        # 生徒ごとの希望数集計
         req_summary = df_reqs.groupby('student_id')['sessions'].sum()
-        print("  生徒名 | 希望コマ数合計")
-        print("  -------|---------------")
-        for sid, count in req_summary.items():
-            print(f"  {s_map.get(sid, sid):<6} | {count} コマ")
-
-        # 講師指定のチェック
-        print("\n  [講師指定状況]")
-        has_pref = False
-        for _, row in df_reqs.iterrows():
-            sid = row['student_id']
-            cid = row['subject_id']
-            # 指定があるか確認
-            prefs = []
-            for i in range(1, 4):
-                col = f'desired_teacher_{i}'
-                if col in row and pd.notna(row[col]) and row[col] != '':
-                    prefs.append(t_map.get(row[col], str(row[col])))
-
-            if prefs:
-                has_pref = True
-                print(f"  - {s_map.get(sid)} ({c_map.get(cid)}): {', '.join(prefs)}")
-
-        if not has_pref:
-            print("  (講師指定は見つかりませんでした。全講師対象として計算します)")
-
+        total_sessions = req_summary.sum()
+        pref_count = sum(1 for _, row in df_reqs.iterrows()
+                         if any(pd.notna(row.get(f'desired_teacher_{i}', '')) and row.get(f'desired_teacher_{i}', '') != ''
+                                for i in range(1, 4)))
+        print(f"  生徒数: {len(req_summary)}名 / 合計希望コマ数: {total_sessions} / 講師指定あり: {pref_count}件")
     else:
         print("  ⚠️ リクエストデータがありません。")
 
@@ -122,20 +101,22 @@ try:
     print(f"\n📌 【生徒の空き状況】(student_availability)")
     if not df_s_avail.empty:
         s_avail_count = df_s_avail.groupby('student_id').size()
-        print("  生徒名 | 空いているスロット数")
-        print("  -------|---------------------")
-        for sid, count in s_avail_count.items():
-            print(f"  {s_map.get(sid, sid):<6} | {count} 箇所")
+        print(f"  登録生徒数: {len(s_avail_count)}名 / 平均空きスロット: {s_avail_count.mean():.0f}箇所")
 
-        # 警告: 希望数に対して空きが少なすぎる生徒
-        print("  ---(チェック)---")
-        for sid in req_summary.index:
-            req = req_summary.get(sid, 0)
-            avail = s_avail_count.get(sid, 0)
-            if avail < req:
-                print(f"  ⚠️ 注意: {s_map.get(sid)}さんは 希望{req}コマ に対し、空きが {avail}箇所 しかありません！（物理的に配置不可）")
-            elif avail == 0:
-                print(f"  ⚠️ 注意: {s_map.get(sid)}さんの空き情報が登録されていません。")
+        # 警告: 希望数に対して空きが少なすぎる生徒のみ表示
+        if not df_reqs.empty:
+            warnings = []
+            for sid in req_summary.index:
+                req = req_summary.get(sid, 0)
+                avail = s_avail_count.get(sid, 0)
+                if avail < req:
+                    warnings.append(f"  ⚠️ {s_map.get(sid)}: 希望{req}コマ に対し空き{avail}箇所（不足）")
+                elif avail == 0:
+                    warnings.append(f"  ⚠️ {s_map.get(sid)}: 空き情報が未登録")
+            if warnings:
+                print("  --- 警告 ---")
+                for w in warnings:
+                    print(w)
     else:
         print("  ⚠️ 生徒の空きデータが空です！GASで出力しましたか？")
 
@@ -143,7 +124,7 @@ try:
     print(f"\n📌 【講師の空き状況】")
     if not df_t_avail.empty:
         t_avail_count = df_t_avail.groupby('teacher_id').size()
-        print(f"  登録講師数: {len(t_avail_count)} 名")
+        print(f"  登録講師数: {len(t_avail_count)}名 / 平均空きスロット: {t_avail_count.mean():.0f}箇所")
     else:
         print("  ⚠️ 講師の空きデータがありません。")
 
@@ -166,50 +147,15 @@ try:
             else:
                 inactive_list.append(row)
 
-        print(f"\n  --- 有効な制約 ({len(active_list)} 件) ---")
-        if active_list:
-            print(f"  {'code':<40} | {'説明':<35} | 値の参照元")
-            print(f"  {'-'*40}-+-{'-'*35}-+-----------")
-            per_person = {'max_teacher_daily_slot', 'max_student_continuous_slot',
-                          'max_student_daily_slot', 'max_teacher_continuous_vacant_slot'}
-            for row in active_list:
-                if row['code'] in per_person:
-                    src = "個人別"
-                else:
-                    src = f"全体: {row['value']}"
-                print(f"  {row['code']:<40} | {row['description']:<35} | {src}")
-        else:
-            print("  (なし)")
-
-        print(f"\n  --- 無効な制約 ({len(inactive_list)} 件) ---")
-        if inactive_list:
-            for row in inactive_list:
-                print(f"  ⬜ {row['code']} - {row['description']}")
-        else:
-            print("  (なし - すべて有効)")
-
-        # 個人別制約の詳細表示
-        if constraint_flags.get('max_teacher_daily_slot', {}).get('activated') or \
-           constraint_flags.get('max_teacher_continuous_vacant_slot', {}).get('activated'):
-            print(f"\n  [講師別の制約値]")
-            print(f"  {'講師名':<12} | 1日上限 | 空きコマ上限")
-            print(f"  {'-'*12}-+--------+------------")
-            for _, row in df_teachers.iterrows():
-                name = row['teacher_name']
-                d = row.get('max_daily_slot', '-')
-                v = row.get('max_continuous_vacant_slot', '-')
-                print(f"  {name:<12} | {d:<6} | {v}")
-
-        if constraint_flags.get('max_student_continuous_slot', {}).get('activated') or \
-           constraint_flags.get('max_student_daily_slot', {}).get('activated'):
-            print(f"\n  [生徒別の制約値]")
-            print(f"  {'生徒名':<12} | 連続上限 | 1日上限")
-            print(f"  {'-'*12}-+--------+--------")
-            for _, row in df_students.iterrows():
-                name = row['student_name']
-                c = row.get('max_continuous_slot', '-')
-                d = row.get('max_daily_slot', '-')
-                print(f"  {name:<12} | {c:<6} | {d}")
+        per_person = {'max_teacher_daily_slot', 'max_student_continuous_slot',
+                      'max_student_daily_slot', 'max_teacher_continuous_vacant_slot',
+                      'max_student_subject_daily_slot'}
+        print(f"  有効: {len(active_list)}件 / 無効: {len(inactive_list)}件")
+        for row in active_list:
+            src = "個人別" if row['code'] in per_person else f"全体: {row['value']}"
+            print(f"  ✅ {row['code']} ({src})")
+        for row in inactive_list:
+            print(f"  ⬜ {row['code']}")
 
     else:
         print("  ⚠️ 制約条件データがありません。デフォルト制約のみ適用します。")

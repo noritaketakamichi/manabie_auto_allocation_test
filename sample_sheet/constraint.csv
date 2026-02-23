@@ -4,3 +4,4 @@ max_student_continuous_slot,生徒の連続コマ上限定義,TRUE,
 max_student_daily_slot,生徒の1日あたり上限コマ数設定,TRUE,
 max_lesson_per_timeslot,同一時限の上限コマ数（ブース数に限りがあるため）,TRUE,3
 max_teacher_continuous_vacant_slot,講師の空きコマ上限数（間空きすぎるのはNG）,TRUE,
+max_student_subject_daily_slot,生徒の科目ごとの1日受講コマ数上限（I07のmax_daily_subject_slot参照）,TRUE,

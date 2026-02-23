@@ -41,7 +41,7 @@ autoScheduling/
 | I04_teacher_list | id, teacher_name, max_daily_slot, max_continuous_vacant_slot | 講師リスト+制約 |
 | I05_lesson_slot | id, date, time_range_id | 日付×時限の全組合せ |
 | I06_teachable_subjects | teacher_id, subject_id | 講師が教えられる科目 |
-| I07_student_subject | student_id, subject_id, sessions, desired_teacher_1, max_slot_1, desired_teacher_2, max_slot_2, desired_teacher_3, max_slot_3 | 受講科目・回数・希望講師 |
+| I07_student_subject | student_id, subject_id, sessions, desired_teacher_1, max_slot_1, desired_teacher_2, max_slot_2, desired_teacher_3, max_slot_3, max_daily_subject_slot | 受講科目・回数・希望講師・科目別1日上限 |
 | I51_student_availability | student_id, slot_id | 生徒が出席可能な枠 |
 | I52_teacher_availability | teacher_id, slot_id | 講師が出勤可能な枠 |
 | constraint | code, description, activated, value | 制約条件 |
@@ -55,6 +55,7 @@ autoScheduling/
 | max_student_daily_slot | 生徒の1日あたり上限コマ数（I03のmax_daily_slot参照） |
 | max_lesson_per_timeslot | 同一時限の上限コマ数（ブース数制限） |
 | max_teacher_continuous_vacant_slot | 講師の空きコマ上限数（I04参照） |
+| max_student_subject_daily_slot | 生徒の科目ごとの1日受講コマ数上限（I07のmax_daily_subject_slot参照） |
 
 ### 出力ファイル（O系）は対象外
 
