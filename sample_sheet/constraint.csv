@@ -5,3 +5,5 @@ max_student_daily_slot,生徒の1日あたり上限コマ数設定,TRUE,
 max_lesson_per_timeslot,同一時限の上限コマ数（ブース数に限りがあるため）,TRUE,3
 max_teacher_continuous_vacant_slot,講師の空きコマ上限数（間空きすぎるのはNG）,TRUE,
 max_student_subject_daily_slot,生徒の科目ごとの1日受講コマ数上限（I07のmax_daily_subject_slot参照）,TRUE,
+soft_spread_subject_across_days,同じ科目は同じ日に固まらないほうがよい（ソフト制約）,TRUE,0.1
+soft_student_consecutive_slots,生徒のコマはなるべく連続するようにする（ソフト制約）,TRUE,0.05

@@ -138,7 +138,7 @@ try:
             code = row['code']
             activated = str(row['activated']).upper() == 'TRUE'
             try:
-                value = int(row['value'])
+                value = float(row['value'])
             except (ValueError, TypeError):
                 value = None
             constraint_flags[code] = {'activated': activated, 'value': value}
@@ -150,9 +150,15 @@ try:
         per_person = {'max_teacher_daily_slot', 'max_student_continuous_slot',
                       'max_student_daily_slot', 'max_teacher_continuous_vacant_slot',
                       'max_student_subject_daily_slot'}
+        soft_constraints = {'soft_spread_subject_across_days', 'soft_student_consecutive_slots'}
         print(f"  有効: {len(active_list)}件 / 無効: {len(inactive_list)}件")
         for row in active_list:
-            src = "個人別" if row['code'] in per_person else f"全体: {row['value']}"
+            if row['code'] in soft_constraints:
+                src = f"ソフト制約: weight={row['value']}"
+            elif row['code'] in per_person:
+                src = "個人別"
+            else:
+                src = f"全体: {row['value']}"
             print(f"  ✅ {row['code']} ({src})")
         for row in inactive_list:
             print(f"  ⬜ {row['code']}")

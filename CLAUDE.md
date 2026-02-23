@@ -56,6 +56,8 @@ autoScheduling/
 | max_lesson_per_timeslot | 同一時限の上限コマ数（ブース数制限） |
 | max_teacher_continuous_vacant_slot | 講師の空きコマ上限数（I04参照） |
 | max_student_subject_daily_slot | 生徒の科目ごとの1日受講コマ数上限（I07のmax_daily_subject_slot参照） |
+| soft_spread_subject_across_days | 同じ科目は同じ日に固まらないほうがよい（ソフト制約、value=重み） |
+| soft_student_consecutive_slots | 生徒のコマはなるべく連続するようにする（ソフト制約、value=重み） |
 
 ### 出力ファイル（O系）は対象外
 

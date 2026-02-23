@@ -396,10 +396,80 @@ try:
 
     print(f"  制約合計: {constraint_count + extra_count} 件")
 
-    # 目的関数: 配置数を最大化
+    # ==============================================
+    # ソフト制約（目的関数へのペナルティ/ボーナス）
+    # 重み < 1.0 なので配置数は絶対に減らない
+    # ==============================================
+    soft_vars = []  # [(var, coefficient), ...]
+
+    # --- ソフト制約1: 科目分散（同じ科目は同じ日に固まらないほうがよい） ---
+    cs1 = constraint_flags.get('soft_spread_subject_across_days', {})
+    if cs1.get('activated') and cs1.get('value') is not None:
+        w1 = cs1['value']
+        soft1_count = 0
+        for (sid, cid, date), vars_list in x_by_student_subject_date.items():
+            if not vars_list:
+                continue
+            existing_count = existing_student_subject_date_counts[(sid, cid, date)]
+            total_in_day = len(vars_list) + existing_count
+            if total_in_day <= 1:
+                continue  # 最大でも1コマなのでペナルティ不要
+            excess = solver.NumVar(0, solver.infinity(), f'spread_{sid}_{cid}_{date}')
+            solver.Add(excess >= solver.Sum(vars_list) + existing_count - 1)
+            soft_vars.append((excess, -w1))
+            soft1_count += 1
+        print(f"  ソフト制約1 ON: 科目分散 weight={w1} (+{soft1_count}個の補助変数)")
+
+    # --- ソフト制約2: 連続配置ボーナス（生徒のコマはなるべく連続） ---
+    cs2 = constraint_flags.get('soft_student_consecutive_slots', {})
+    if cs2.get('activated') and cs2.get('value') is not None:
+        w2 = cs2['value']
+        soft2_count = 0
+        for sid in s_map.keys():
+            for date, tr_slots in slots_by_date.items():
+                for idx in range(len(tr_slots) - 1):
+                    slot_i = tr_slots[idx][1]
+                    slot_j = tr_slots[idx + 1][1]
+
+                    has_i_existing = slot_i in student_busy_slots[sid]
+                    has_j_existing = slot_j in student_busy_slots[sid]
+                    vars_i = x_by_student_slot.get((sid, slot_i), [])
+                    vars_j = x_by_student_slot.get((sid, slot_j), [])
+
+                    # 両方が既存配置の場合はスキップ（定数なので最適化に影響なし）
+                    if has_i_existing and has_j_existing:
+                        continue
+                    # どちらかにも変数がない＆既存もない場合はスキップ
+                    if not has_i_existing and not vars_i:
+                        continue
+                    if not has_j_existing and not vars_j:
+                        continue
+
+                    adj = solver.NumVar(0, 1, f'adj_{sid}_{date}_{idx}')
+                    # adj <= z_i
+                    if has_i_existing:
+                        pass  # z_i = 1, adj <= 1 は変数定義で保証済み
+                    else:
+                        solver.Add(adj <= solver.Sum(vars_i))
+                    # adj <= z_j
+                    if has_j_existing:
+                        pass  # z_j = 1, adj <= 1 は変数定義で保証済み
+                    else:
+                        solver.Add(adj <= solver.Sum(vars_j))
+
+                    soft_vars.append((adj, w2))
+                    soft2_count += 1
+        print(f"  ソフト制約2 ON: 連続配置ボーナス weight={w2} (+{soft2_count}個の補助変数)")
+
+    if soft_vars:
+        print(f"  ソフト制約 補助変数合計: {len(soft_vars)} 個")
+
+    # 目的関数: 配置数を最大化 + ソフト制約
     objective = solver.Objective()
     for v in x.values():
         objective.SetCoefficient(v, 1)
+    for var, coeff in soft_vars:
+        objective.SetCoefficient(var, coeff)
     objective.SetMaximization()
 
     # 計算実行
